@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Document Editor</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4285f4;
+            --secondary-color: #f1f3f4;
+            --text-color: #202124;
+            --border-color: #dadce0;
+            --hover-color: #e8f0fe;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Google Sans', Arial, sans-serif;
+        }
+
+        body {
+            background-color: #f8f9fa;
+            color: var(--text-color);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background-color: white;
+            box-shadow: 0 1px 2px 0 rgba(60,64,67,.3);
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .logo img {
+            height: 32px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: white;
+            border-right: 1px solid var(--border-color);
+            padding: 16px;
+            height: calc(100vh - 60px);
+            overflow-y: auto;
+        }
+
+        .document-list {
+            margin-top: 16px;
+        }
+
+        .document-item {
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .document-item:hover {
+            background-color: var(--hover-color);
+        }
+
+        .document-item.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .created-date {
+            font-size: 12px;
+            color: #5f6368;
+        }
+
+        .document-item.active .created-date {
+            color: rgba(255,255,255,0.7);
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 60px);
+        }
+
+        .toolbar {
+            background-color: white;
+            padding: 8px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .tool-button {
+            background: none;
+            border: none;
+            padding: 6px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .tool-button:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .tool-button.active {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .tool-separator {
+            width: 1px;
+            background-color: var(--border-color);
+            margin: 0 4px;
+        }
+
+        .editor {
+            flex: 1;
+            padding: 24px;
+            background-color: white;
+            outline: none;
+            overflow-y: auto;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+
+        .collaborators {
+            background-color: white;
+            padding: 8px 16px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .collaborator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            background-color: var(--secondary-color);
+            border-radius: 16px;
+        }
+
+        .collaborator-avatar {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #5f6368;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .new-document-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            margin-top: 16px;
+            width: 100%;
+        }
+
+        .new-document-btn:hover {
+            background-color: #3367d6;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 180px;
+                padding: 8px;
+            }
+            
+            .toolbar {
+                gap: 4px;
+                padding: 4px 8px;
+            }
+            
+            .editor {
+                padding: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+                border-right: none;
+                border-bottom: 1px solid var(--border-color);
+            }
+            
+            .editor-container {
+                height: auto;
+                min-height: 70vh;
+            }
+            
+            .document-list {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+            
+            .document-item {
+                margin-bottom: 0;
+                padding: 4px 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <img src="https://placehold.co/32x32" alt="Document editor logo with a stylized pencil and document icon" />
+            <span>Collaborative Editor</span>
+        </div>
+        <div class="user-info">
+            <span id="username-display">Anonymous</span>
+            <div class="avatar" id="user-avatar">A</div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <button class="new-document-btn" id="new-document">New Document</button>
+            <div class="document-list" id="document-list">
+                <!-- Documents will be populated here -->
+            </div>
+        </div>
+
+        <div class="editor-container">
+            <div class="toolbar">
+                <button class="tool-button" data-command="bold"><b>B</b></button>
+                <button class="tool-button" data-command="italic"><i>I</i></button>
+                <button class="tool-button" data-command="underline"><u>U</u></button>
+                <div class="tool-separator"></div>
+                <button class="tool-button" data-command="insertUnorderedList">• List</button>
+                <button class="tool-button" data-command="insertOrderedList">1. List</button>
+                <div class="tool-separator"></div>
+                <button class="tool-button" data-command="justifyLeft">Align Left</button>
+                <button class="tool-button" data-command="justifyCenter">Center</button>
+                <button class="tool-button" data-command="justifyRight">Align Right</button>
+            </div>
+
+            <div class="editor" id="editor" contenteditable="true"></div>
+
+            <div class="collaborators" id="collaborators">
+                <span>Collaborators:</span>
+                <!-- Collaborators will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Socket.IO connection
+            const socket = io('https://socket-io-demo.glitch.me/', { 
+                transports: ['websocket'],
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                autoConnect: true
+            });
+
+            // Generate a random username and color
+            const adjectives = ['Happy', 'Creative', 'Smart', 'Fast', 'Clever', 'Kind'];
+            const nouns = ['Writer', 'Editor', 'Scholar', 'Thinker', 'Reader'];
+            const randomAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+            const username = `${randomAdj} ${randomNoun} ${Math.floor(Math.random() * 100)}`;
+            
+            // Set user info
+            document.getElementById('username-display').textContent = username;
+            document.getElementById('user-avatar').textContent = username.charAt(0);
+            
+            // Generate a random color based on username hash
+            let hash = 0;
+            for (let i = 0; i < username.length; i++) {
+                hash = username.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const color = `hsl(${Math.abs(hash) % 360}, 70%, 65%)`;
+            document.getElementById('user-avatar').style.backgroundColor = color;
+            
+            // Current document state
+            let currentDocId = null;
+            let currentDocContent = '';
+            let collaborators = {};
+            
+            // DOM elements
+            const editor = document.getElementById('editor');
+            const documentList = document.getElementById('document-list');
+            const collaboratorsContainer = document.getElementById('collaborators');
+            const newDocumentBtn = document.getElementById('new-document');
+            const notification = document.getElementById('notification');
+            
+            // Initialize with sample documents
+            const sampleDocuments = [
+                { id: 'doc1', title: 'Project Overview', content: 'Edit this document collaboratively', updatedAt: new Date() },
+                { id: 'doc2', title: 'Meeting Notes', content: 'From our last team meeting...', updatedAt: new Date(Date.now() - 86400000) },
+                { id: 'doc3', title: 'Ideas Board', content: 'Share your ideas here', updatedAt: new Date(Date.now() - 172800000) }
+            ];
+            
+            // Render documents list
+            function renderDocuments(documents) {
+                documentList.innerHTML = '';
+                documents.forEach(doc => {
+                    const docElement = document.createElement('div');
+                    docElement.className = 'document-item';
+                    if (doc.id === currentDocId) {
+                        docElement.classList.add('active');
+                    }
+                    
+                    docElement.innerHTML = `
+                        <span>${doc.title}</span>
+                        <span class="created-date">${formatDate(doc.updatedAt)}</span>
+                    `;
+                    
+                    docElement.addEventListener('click', () => loadDocument(doc));
+                    documentList.appendChild(docElement);
+                });
+            }
+            
+            // Format date
+            function formatDate(date) {
+                if (date instanceof Date) {
+                    return date.toLocaleDateString();
+                }
+                return new Date(date).toLocaleDateString();
+            }
+            
+            // Load a document
+            function loadDocument(doc) {
+                currentDocId = doc.id;
+                currentDocContent = doc.content;
+                editor.innerHTML = doc.content;
+                
+                // Highlight active document
+                renderDocuments(sampleDocuments);
+                
+                // Join the document room
+                if (socket.connected) {
+                    socket.emit('join-document', { docId: doc.id, username });
+                }
+                
+                showNotification(`Loaded document: ${doc.title}`);
+            }
+            
+            // Create a new document
+            newDocumentBtn.addEventListener('click', () => {
+                const newDocId = 'doc' + Date.now();
+                const newDoc = {
+                    id: newDocId,
+                    title: 'Untitled Document',
+                    content: '',
+                    updatedAt: new Date()
+                };
+                
+                sampleDocuments.unshift(newDoc);
+                renderDocuments(sampleDocuments);
+                loadDocument(newDoc);
+            });
+            
+            // Handle toolbar buttons
+            document.querySelectorAll('.tool-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    const command = button.getAttribute('data-command');
+                    document.execCommand(command, false, null);
+                    editor.focus();
+                });
+            });
+            
+            // Show notification
+            function showNotification(message, duration = 3000) {
+                notification.textContent = message;
+                notification.classList.add('show');
+                
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, duration);
+            }
+            
+            // Editor event listeners
+            editor.addEventListener('input', () => {
+                if (currentDocId) {
+                    const content = editor.innerHTML;
+                    if (content !== currentDocContent) {
+                        currentDocContent = content;
+                        
+                        // Find and update document in sampleDocuments
+                        const docIndex = sampleDocuments.findIndex(doc => doc.id === currentDocId);
+                        if (docIndex !== -1) {
+                            sampleDocuments[docIndex].content = content;
+                            sampleDocuments[docIndex].updatedAt = new Date();
+                        }
+                        
+                        // Broadcast changes
+                        if (socket.connected) {
+                            socket.emit('editor-changes', {
+                                docId: currentDocId,
+                                content: content,
+                                sender: username
+                            });
+                        }
+                    }
+                }
+            });
+            
+            // Socket.IO event handlers
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                showNotification('Connected to collaboration server');
+                
+                if (currentDocId) {
+                    socket.emit('join-document', { docId: currentDocId, username });
+                }
+            });
+            
+            socket.on('disconnect', () => {
+                showNotification('Disconnected from collaboration server', 5000);
+            });
+            
+            socket.on('editor-changes', (data) => {
+                if (data.docId === currentDocId && data.sender !== username) {
+                    editor.innerHTML = data.content;
+                    currentDocContent = data.content;
+                    
+                    // Find and update document in sampleDocuments
+                    const docIndex = sampleDocuments.findIndex(doc => doc.id === currentDocId);
+                    if (docIndex !== -1) {
+                        sampleDocuments[docIndex].content = data.content;
+                        sampleDocuments[docIndex].updatedAt = new Date();
+                    }
+                    
+                    renderDocuments(sampleDocuments);
+                }
+            });
+            
+            socket.on('user-joined', (data) => {
+                if (data.docId === currentDocId) {
+                    collaborators[data.username] = data;
+                    updateCollaborators();
+                    showNotification(`${data.username} joined the document`);
+                }
+            });
+            
+            socket.on('user-left', (data) => {
+                if (data.docId === currentDocId) {
+                    delete collaborators[data.username];
+                    updateCollaborators();
+                    showNotification(`${data.username} left the document`);
+                }
+            });
+            
+            // Update collaborators list
+            function updateCollaborators() {
+                collaboratorsContainer.innerHTML = '<span>Collaborators:</span>';
+                
+                Object.keys(collaborators).forEach(username => {
+                    const user = collaborators[username];
+                    
+                    const collaboratorElement = document.createElement('div');
+                    collaboratorElement.className = 'collaborator';
+                    
+                    const avatar = document.createElement('div');
+                    avatar.className = 'collaborator-avatar';
+                    avatar.textContent = username.charAt(0);
+                    avatar.style.backgroundColor = user.color || '#5f6368';
+                    
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = username;
+                    
+                    collaboratorElement.appendChild(avatar);
+                    collaboratorElement.appendChild(nameSpan);
+                    collaboratorsContainer.appendChild(collaboratorElement);
+                });
+            }
+            
+            // Initial render
+            renderDocuments(sampleDocuments);
+            
+            // Load first document by default
+            if (sampleDocuments.length > 0) {
+                loadDocument(sampleDocuments[0]);
+            }
+            
+            // Handle beforeunload to notify others when leaving
+            window.addEventListener('beforeunload', () => {
+                if (socket.connected && currentDocId) {
+                    socket.emit('leave-document', { docId: currentDocId, username });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
